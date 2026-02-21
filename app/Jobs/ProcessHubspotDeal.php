@@ -2,60 +2,45 @@
 
 namespace App\Jobs;
 
-use App\Models\Deal;
-use App\Models\User;
+use App\DTOs\DealData;
+use App\Mail\WelcomeMail;
+use App\Services\DealService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
-use App\Mail\WelcomeMail;
 use Illuminate\Support\Facades\Mail;
+
 class ProcessHubspotDeal implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public function __construct(public array $payload) {}
 
-   public function handle(): void
-{
-    $email = $this->payload['email'] ?? null;
+    public function handle(DealService $dealService): void
+    {
+        $email = $this->payload['email'] ?? null;
 
-    if (!$email) {
-        Log::warning('HubSpot webhook missing email', $this->payload);
-        return;
+        if (!$email) {
+            Log::warning('HubSpot webhook missing email', $this->payload);
+            return;
+        }
+
+        $data = DealData::fromPayload($this->payload);
+
+        $result = $dealService->processFromWebhook($data);
+
+        if ($result['user_created']) {
+            Mail::to($result['user']->email)->send(
+                new WelcomeMail($result['user'], $result['password'])
+            );
+        }
+
+        Log::info('Deal processed', [
+            'user_created' => $result['user_created'],
+            'email' => $email,
+        ]);
     }
-
-    $password = Str::random(12);
-
-    $user = User::firstOrCreate(
-    ['email' => $email],
-    [
-        'name' => $this->payload['dealname'] ?? 'Client',
-        'password' => bcrypt($password),
-    ]
-);
-
-$wasRecentlyCreated = $user->wasRecentlyCreated;
-
-if ($wasRecentlyCreated) {
-    Mail::to($user->email)->send(new WelcomeMail($user, $password));
-}
-
-    Deal::create([
-        'user_id' => $user->id,
-        'hubspot_deal_id' => (string) $this->payload['objectId'],
-        'title' => $this->payload['dealname'] ?? null,
-        'amount' => $this->payload['amount'] ?? null,
-        'status' => $this->payload['eventType'] ?? null,
-        'payload' => $this->payload,
-    ]);
-
-    Log::info('Deal saved', [
-        'user_created' => $wasRecentlyCreated,
-        'email' => $email,
-    ]);
-}
 }

@@ -1,21 +1,27 @@
 <?php
 
 namespace App\Http\Controllers;
+
+use App\Services\DealService;
 use Illuminate\Support\Facades\Auth;
 
 class DealController extends Controller
 {
+    public function __construct(
+        private DealService $dealService,
+    ) {}
+
     public function index()
-{
-    $deals = Auth::user()->deals()->latest()->get();
+    {
+        $deals = $this->dealService->getAllForUser(Auth::user());
 
-    return view('deals.index', compact('deals'));
-}
+        return view('deals.index', compact('deals'));
+    }
 
-public function show(string $id)
-{
-    $deal = Auth::user()->deals()->findOrFail($id);
+    public function show(string $id)
+    {
+        $deal = $this->dealService->findForUser(Auth::user(), $id);
 
-    return view('deals.show', compact('deal'));
-}
+        return view('deals.show', compact('deal'));
+    }
 }
